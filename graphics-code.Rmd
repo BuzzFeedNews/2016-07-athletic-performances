@@ -47,14 +47,14 @@ all_iaaf$StateDope <- factor(all_iaaf$StateDope, levels = c("NULL","RUS","GDR"),
 
 # short track events (time in seconds)
 track_short_iaaf <- all_iaaf %>%
-  filter(grepl("100m|200m|400m|110m|4x100m", Event) & nchar(Result) < 6) %>%
+  filter(grepl("100m|200m|400m|400h|110m|4x100m", Event) & nchar(Result) < 6) %>%
   mutate(Seconds = as.numeric(Result),
          Time_S = Seconds) %>%
   select(-Seconds)
 
 # medium/long track events (time in minutes)
 track_medium_iaaf <- all_iaaf %>%
-  filter(grepl("800m|1500m|5000m|10000m|3000mh|4x400m", Event)) %>%
+  filter(grepl("800m|1500m|5000m|10000m|3000h|4x400m", Event)) %>%
   mutate(Time = Result) %>%
   separate(Time, c("Minutes","Seconds"), ":") %>%
   mutate(Minutes = as.numeric(Minutes),
@@ -92,12 +92,12 @@ iaaf_wr <- read_csv("data/iaaf_wr.csv")
 
 # short track events (time in seconds)
 short_track_records <- iaaf_wr %>%
-  filter(grepl("100m|200m|400m|110m", Event) & nchar(Result) < 6) %>%
+  filter(grepl("100m|200m|400m|400h|110m", Event) & nchar(Result) < 6) %>%
   mutate(Time_S = as.numeric(Result))
 
 # medium/long track events (time in minutes)
 medium_track_records <- iaaf_wr %>%
-  filter(grepl("800m|1500m|5000m|10000m|3000mh|4x400m", Event)) %>%
+  filter(grepl("800m|1500m|5000m|10000m|3000h|4x400m", Event)) %>%
   mutate(Time = Result) %>%
   separate(Time, c("Minutes","Seconds"), ":") %>%
   mutate(Minutes = as.numeric(Minutes),

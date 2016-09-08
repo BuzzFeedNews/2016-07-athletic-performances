@@ -101,14 +101,14 @@ all_iaaf$StateDope &lt;- factor(all_iaaf$StateDope, levels = c(&quot;NULL&quot;,
 
 # short track events (time in seconds)
 track_short_iaaf &lt;- all_iaaf %&gt;%
-  filter(grepl(&quot;100m|200m|400m|110m|4x100m&quot;, Event) &amp; nchar(Result) &lt; 6) %&gt;%
+  filter(grepl(&quot;100m|200m|400m|400h|110m|4x100m&quot;, Event) &amp; nchar(Result) &lt; 6) %&gt;%
   mutate(Seconds = as.numeric(Result),
          Time_S = Seconds) %&gt;%
   select(-Seconds)
 
 # medium/long track events (time in minutes)
 track_medium_iaaf &lt;- all_iaaf %&gt;%
-  filter(grepl(&quot;800m|1500m|5000m|10000m|3000mh|4x400m&quot;, Event)) %&gt;%
+  filter(grepl(&quot;800m|1500m|5000m|10000m|3000h|4x400m&quot;, Event)) %&gt;%
   mutate(Time = Result) %&gt;%
   separate(Time, c(&quot;Minutes&quot;,&quot;Seconds&quot;), &quot;:&quot;) %&gt;%
   mutate(Minutes = as.numeric(Minutes),
@@ -144,12 +144,12 @@ iaaf_wr &lt;- read_csv(&quot;data/iaaf_wr.csv&quot;)
 
 # short track events (time in seconds)
 short_track_records &lt;- iaaf_wr %&gt;%
-  filter(grepl(&quot;100m|200m|400m|110m&quot;, Event) &amp; nchar(Result) &lt; 6) %&gt;%
+  filter(grepl(&quot;100m|200m|400m|400h|110m&quot;, Event) &amp; nchar(Result) &lt; 6) %&gt;%
   mutate(Time_S = as.numeric(Result))
 
 # medium/long track events (time in minutes)
 medium_track_records &lt;- iaaf_wr %&gt;%
-  filter(grepl(&quot;800m|1500m|5000m|10000m|3000mh|4x400m&quot;, Event)) %&gt;%
+  filter(grepl(&quot;800m|1500m|5000m|10000m|3000h|4x400m&quot;, Event)) %&gt;%
   mutate(Time = Result) %&gt;%
   separate(Time, c(&quot;Minutes&quot;,&quot;Seconds&quot;), &quot;:&quot;) %&gt;%
   mutate(Minutes = as.numeric(Minutes),
