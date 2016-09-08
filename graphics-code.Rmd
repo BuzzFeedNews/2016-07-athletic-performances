@@ -1,0 +1,449 @@
+# Why Track and Field Stars Don't Break Records Like They Used To (But Swimmers Do)
+
+Data and R code to reproduce the graphics in [this July 30, 2016 BuzzFeed News article](https://www.buzzfeed.com/peteraldhous/faster-higher-stronger-not) on trends in athletics and swimming performances. Supporting files are in [this GitHub repository](https://github.com/BuzzFeedNews/2016-07-athletic-performances).
+
+```{r knitr_options, include=FALSE}
+library(knitr)
+opts_chunk$set(out.width="970px", dpi=300)
+```
+
+### Data
+
+`iaaf_toplists.csv` Data from the all-time [top performance lists](https://www.iaaf.org/records/toplists/) for senior outdoor track and field meets, maintained by the International Association of Athletic Federations (IAAF); top 100 performances for each event (top 50 for decathlon and heptathlon).
+
+Contains the following fields:
+
+ - `Result` Time, distance, height, or points, depending on `Event`.
+ - `Competitor` Name of athlete, or team in the case of relays.
+ - `Nat` Three-letter code for nationality of `Competitor`.
+ - `Venue` `Date` Location and date of performance.
+ - `Gender` Men or women.
+ - `Event` Self-explanatory.
+ - `StateDope` "GDR" for performances by East German athletes from Jan 1, 1974 onwards, during its [state-sponsored doping program](http://clinchem.aaccjnls.org/content/43/7/1262.long); "RUS" for performances by Russian athletes from Jan 1, 2012 onwards, during the doping program documented in [this report](https://wada-main-prod.s3.amazonaws.com/resources/files/20160718_ip_report_newfinal.pdf) commissioned by the World Anti-Doping Agency; else "NULL."
+
+`iaaf_wr.csv` As above, reflecting world record performances only. Contains the fields `Result`,`Date`,`Event`, and `Gender`.
+
+`world_records.csv` World records in swimming (long course, ratified records only) and track and field on July 29, 2016, sourced from [FINA](http://www.fina.org/content/swimming-records), the international swimming federation, and the IAAF. 
+
+Contains the following fields:
+
+- `Gender` `Event` As above.
+- ` Year` Year in which record was set.
+- `Sport` Swimming or track and field.
+
+### Load and process data for top performances
+
+```{r, results="hide", warning=FALSE, message=FALSE}
+# load required packages
+library(readr)
+library(dplyr)
+library(tidyr)
+
+# load data
+all_iaaf <- read_csv("data/iaaf_toplists.csv")
+
+# convert StateDope to an ordered factor
+all_iaaf$StateDope <- factor(all_iaaf$StateDope, levels = c("NULL","RUS","GDR"), ordered = T)
+
+# short track events (time in seconds)
+track_short_iaaf <- all_iaaf %>%
+  filter(grepl("100m|200m|400m|110m|4x100m", Event) & nchar(Result) < 6) %>%
+  mutate(Seconds = as.numeric(Result),
+         Time_S = Seconds) %>%
+  select(-Seconds)
+
+# medium/long track events (time in minutes)
+track_medium_iaaf <- all_iaaf %>%
+  filter(grepl("800m|1500m|5000m|10000m|3000mh|4x400m", Event)) %>%
+  mutate(Time = Result) %>%
+  separate(Time, c("Minutes","Seconds"), ":") %>%
+  mutate(Minutes = as.numeric(Minutes),
+         Seconds = as.numeric(Seconds),
+         Time_M = Minutes+Seconds/60) %>%
+  select(-Seconds, -Minutes)
+  
+# marathon (time in hours)
+track_long_iaaf <- all_iaaf %>%
+  filter(Event == "marathon") %>%
+  mutate(Time = Result) %>%
+  separate(Time, c("Hours","Minutes","Seconds"), ":") %>%
+  mutate(Hours = as.numeric(Hours),
+         Minutes = as.numeric(Minutes),
+         Seconds = as.numeric(Seconds),
+         Time_H = Hours + Minutes/60 + Seconds/3600) %>%
+  select(-Seconds, -Minutes, -Hours)
+
+# field events (distance/height in meters)
+field_iaaf <- all_iaaf %>%
+  filter(grepl("throw|put|jump|vault", Event)) %>%
+  mutate(Meters = as.numeric(Result))
+
+# combined events (points)
+combined_iaaf <- all_iaaf %>%
+  filter(grepl("decathlon|heptathlon", Event)) %>%
+  mutate(Points = as.numeric(Result))
+```
+
+### Load and process data for world record progression
+
+```{r results="hide", warning=FALSE, message=FALSE}
+# load data
+iaaf_wr <- read_csv("data/iaaf_wr.csv")
+
+# short track events (time in seconds)
+short_track_records <- iaaf_wr %>%
+  filter(grepl("100m|200m|400m|110m", Event) & nchar(Result) < 6) %>%
+  mutate(Time_S = as.numeric(Result))
+
+# medium/long track events (time in minutes)
+medium_track_records <- iaaf_wr %>%
+  filter(grepl("800m|1500m|5000m|10000m|3000mh|4x400m", Event)) %>%
+  mutate(Time = Result) %>%
+  separate(Time, c("Minutes","Seconds"), ":") %>%
+  mutate(Minutes = as.numeric(Minutes),
+         Seconds = as.numeric(Seconds),
+         Time_M = Minutes + Seconds/60) %>%
+  select(-Seconds, -Minutes)
+
+# marathon (time in hours)
+long_track_records <- iaaf_wr %>%
+  filter(Event == "marathon") %>%
+  mutate(Time = Result) %>%
+  separate(Time, c("Hours","Minutes","Seconds"), ":") %>%
+  mutate(Hours = as.numeric(Hours),
+         Minutes = as.numeric(Minutes),
+         Seconds=as.numeric(Seconds),
+         Time_H = Hours + Seconds/3600 + Minutes/60) %>%
+  select(-Seconds,-Minutes,-Hours)
+
+# field events (distance/height in meters)
+field_records <- iaaf_wr %>%
+  filter(grepl("throw|put|jump|vault", Event)) %>%
+  mutate(Meters = as.numeric(Result))
+
+# combined events (points)
+combined_records <- iaaf_wr %>%
+  filter(grepl("decathlon|heptathlon", Event)) %>%
+  mutate(Points = as.numeric(Result))
+
+```
+
+(Note that the calculated fields `Time_H` and `Time_M`, giving race times in hours and minutes, respectively, are decimals.)
+
+### Sample chart for top performances/world record progression
+
+The code that follows makes charts of the following form, here showing performances in the women's 400 meters. Performances by East German athletes from Jan 1, 1974 onwards, during its [state-sponsored doping program](http://clinchem.aaccjnls.org/content/43/7/1262.long), shown in blue; performances by Russian athletes from Jan 1, 2012 onwards, during the doping program documented in [this report](https://wada-main-prod.s3.amazonaws.com/resources/files/20160718_ip_report_newfinal.pdf), shown in red):
+
+```{r, results="hide", warning=FALSE, message=FALSE, echo=FALSE}
+library(ggplot2)
+
+women400 <- track_short_iaaf %>%
+  filter(Event == "400m" & Gender == "women")
+women400wr <- short_track_records %>%
+  filter(Event == "400m" & Gender == "women")
+x <- data.frame(women400wr$Time_S[1],as.Date("2016-07-29"),"400m","women")
+names(x) <- c("Time_S","Date","Event","Gender")
+women400wr <- bind_rows(women400wr,x)
+
+chart <- ggplot() +
+  theme_minimal() +
+  theme(text=element_text(size=22)) +
+  theme(axis.title = element_text(size=16)) + 
+  geom_point(aes(x=Date, y=Time_S, fill=StateDope), 
+             shape = 21, 
+             colour="black",
+             size=5, 
+             alpha=0.5, 
+             data=women400) +
+  xlab("") + 
+  ylab("Seconds")
+if (!"RUS" %in% women400$StateDope) { chart <- chart + scale_fill_manual(values=c("gray", "blue"), guide=F) } else if (!"GDR" %in% women400$StateDope) { chart <- chart + scale_fill_manual(values=c("gray", "red"), guide=F) } else { chart <- chart + scale_fill_manual(values=c("gray", "red", "blue"), guide=F) } 
+if (!is.na(women400wr$Result[1])) { chart <- chart + geom_step(aes(x=Date, y=Time_S), color="grey40", data = women400wr)
+chart <- chart + scale_x_date(limits = c(min(women400$Date),as.Date("2016-07-29"))) + scale_y_reverse(limits = c(max(women400$Time_S),min(women400$Time_S))) }
+
+plot(chart)
+```
+
+### Generate charts for top performances/world record progression
+
+```{r results="hide", warning=FALSE, message=FALSE}
+# load required packages
+library(ggplot2)
+library(scales)
+
+genders <- c("men","women")
+
+# short track events (time in seconds)
+for (gender in genders) {
+  for (event in unique(track_short_iaaf$Event)) {
+    tmp <- track_short_iaaf %>%
+      filter(Event==event & Gender==gender)
+    tmp_wr <- short_track_records %>%
+      filter(Event==event & Gender==gender)
+    # the following three lines ensure that the stepped line for record progression will extend to the right of the chart
+    x <- data.frame(tmp_wr$Time_S[1],as.Date("2016-07-29"),event,gender)
+    names(x) <- c("Time_S","Date","Event","Gender")
+    tmp_wr <- bind_rows(tmp_wr,x)
+    tmp_chart <- ggplot() + 
+      theme_minimal() + 
+      theme(text=element_text(size=22)) + 
+      theme(axis.title = element_text(size=16)) + 
+      geom_point(aes(x=Date, y=Time_S, fill=StateDope), 
+                 shape = 21, 
+                 colour="black", 
+                 size=5, 
+                 alpha=0.5, 
+                 data=tmp) + 
+      xlab("") + 
+      ylab("Seconds")
+    if (!"RUS" %in% tmp$StateDope) 
+      { 
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "blue"), guide=F) 
+      } 
+    else if (!"GDR" %in% tmp$StateDope)
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red"), guide=F)
+    }
+    else
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red", "blue"), guide=F)
+    }
+    if (!is.na(tmp_wr$Result[1]))
+    {
+      tmp_chart <- tmp_chart +
+        scale_y_reverse(limits = c(max(tmp$Time_S),min(tmp$Time_S))) +
+        scale_x_date(limits = c(min(tmp$Date),as.Date("2016-07-29")))
+      tmp_chart <- tmp_chart +
+        geom_step(aes(x=Date, y=Time_S), color="grey40", data = tmp_wr)
+    }
+    ggsave(file=paste0("charts/",gender," ",event,".jpg"), plot=tmp_chart, width = 8, height = 4, units = "in", dpi=300)
+    print(paste0(gender," ",event))
+  }
+}
+
+# medium/long track events (time in minutes)
+for (gender in genders) {
+  for (event in unique(track_medium_iaaf$Event)) {
+    tmp <- track_medium_iaaf %>%
+      filter(Event==event & Gender==gender)
+    tmp_wr <- medium_track_records %>%
+      filter(Event==event & Gender==gender)
+    x <- data.frame(tmp_wr$Time_M[1],as.Date("2016-07-29"),event,gender)
+    names(x) <- c("Time_M","Date","Event","Gender")
+    tmp_wr <- bind_rows(tmp_wr,x)
+    tmp_chart <- ggplot() + 
+      theme_minimal() + 
+      theme(text=element_text(size=22)) + 
+      theme(axis.title = element_text(size=16)) + 
+      geom_point(aes(x=Date, y=Time_M, fill=StateDope), 
+                 shape = 21, 
+                 colour="black", 
+                 size=5, 
+                 alpha=0.5, 
+                 data=tmp) + 
+      xlab("") + 
+      ylab("Minutes")
+    if (!"RUS" %in% tmp$StateDope) 
+      { 
+      tmp_chart <- tmp_chart +
+      scale_fill_manual(values=c("gray", "blue"), guide=F) 
+      } 
+    else if (!"GDR" %in% tmp$StateDope)
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red"), guide=F)
+    }
+    else
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red", "blue"), guide=F)
+    }
+    if (!is.na(tmp_wr$Result[1]))
+    {
+      tmp_chart <- tmp_chart +
+        scale_y_reverse(limits = c(max(tmp$Time_M),min(tmp$Time_M))) +
+        scale_x_date(limits = c(min(tmp$Date),as.Date("2016-07-29")))
+      tmp_chart <- tmp_chart +
+        geom_step(aes(x=Date, y=Time_M), color="grey40", data = tmp_wr)
+    }
+    ggsave(file=paste0("charts/",gender," ",event,".jpg"), plot=tmp_chart, width = 8, height = 4, units = "in", dpi=300)
+    print(paste0(gender," ",event))
+  }
+}
+
+# marathon (time in hours)
+for (gender in genders) {
+  for (event in unique(track_long_iaaf$Event)) {
+    tmp <- track_long_iaaf %>%
+      filter(Event==event & Gender==gender)
+    tmp_wr <- long_track_records %>%
+      filter(Event==event & Gender==gender)
+    x <- data.frame(tmp_wr$Time_H[1],as.Date("2016-07-29"),event,gender)
+    names(x) <- c("Time_H","Date","Event","Gender")
+    tmp_wr <- bind_rows(tmp_wr,x)
+    tmp_chart <- ggplot() + 
+      theme_minimal() + 
+      theme(text=element_text(size=22)) + 
+      theme(axis.title = element_text(size=16)) + 
+      geom_point(aes(x=Date, y=Time_H, fill=StateDope), 
+                 shape = 21, 
+                 colour="black", 
+                 size=5, 
+                 alpha=0.5, 
+                 data=tmp) + 
+      xlab("") + 
+      ylab("Hours")
+    if (!"RUS" %in% tmp$StateDope) 
+      { 
+      tmp_chart <- tmp_chart +
+      scale_fill_manual(values=c("gray", "blue"), guide=F) 
+      } 
+    else if (!"GDR" %in% tmp$StateDope)
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red"), guide=F)
+    }
+    else
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red", "blue"), guide=F)
+    }
+    if (!is.na(tmp_wr$Result[1]))
+    {
+      tmp_chart <- tmp_chart +
+        scale_y_reverse(limits = c(max(tmp$Time_H),min(tmp$Time_H))) +
+        scale_x_date(limits = c(min(tmp$Date),as.Date("2016-07-29")))
+      tmp_chart <- tmp_chart +
+        geom_step(aes(x=Date, y=Time_H), color="grey40", data = tmp_wr)
+    }
+    ggsave(file=paste0("charts/",gender," ",event,".jpg"), plot=tmp_chart, width = 8, height = 4, units = "in", dpi=300)
+    print(paste0(gender," ",event))
+  }
+}
+
+# field events (distance/height in meters)
+for (gender in genders) {
+  for (event in unique(field_iaaf$Event)) {
+    tmp <- field_iaaf %>%
+      filter(Event==event & Gender==gender)
+    tmp_wr <- field_records %>%
+      filter(Event==event & Gender==gender)
+    x <- data.frame(tmp_wr$Meters[1],as.Date("2016-07-29"),event,gender)
+    names(x) <- c("Meters","Date","Event","Gender")
+    tmp_wr <- bind_rows(tmp_wr,x)
+    tmp_chart <- ggplot() +
+      theme_minimal() +
+      theme(text=element_text(size=22)) +
+      theme(axis.title = element_text(size=16)) +
+      geom_point(aes(x=Date, y=Meters, fill=StateDope), shape = 21, colour="black", size=5, alpha=0.5, data=tmp) +
+      xlab("") + ylab("Meters")
+    if (!"RUS" %in% tmp$StateDope)
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "blue"), guide=F)
+    }
+    else if (!"GDR" %in% tmp$StateDope)
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red"), guide=F)
+    }
+    else
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red", "blue"), guide=F)
+    }
+    if (!is.na(tmp_wr$Meters[1]))
+    {
+      tmp_chart <- tmp_chart +
+        geom_step(aes(x=Date, y=Meters), color="grey40", data = tmp_wr)
+      tmp_chart <- tmp_chart +
+        scale_x_date(limits = c(min(tmp$Date),as.Date("2016-07-29"))) +
+        scale_y_continuous(limits = c(min(tmp$Meters),max(tmp$Meters)), labels = comma)
+    }
+    ggsave(file=paste0("charts/",gender," ",event,".jpg"), plot=tmp_chart, width = 8, height = 4, units = "in", dpi=300)
+    print(paste0(gender," ",event))
+  }
+}
+
+# combined events (points)
+for (gender in genders) {
+  for (event in unique(combined_iaaf$Event)) {
+    tmp <- combined_iaaf %>%
+      filter(Event==event & Gender==gender)
+    tmp_wr <- combined_records %>%
+      filter(Event==event & Gender==gender)
+    x <- data.frame(tmp_wr$Points[1],as.Date("2016-07-29"),event,gender)
+    names(x) <- c("Points","Date","Event","Gender")
+    tmp_wr <- bind_rows(tmp_wr,x)
+    tmp_chart <- ggplot() +
+      theme_minimal() +
+      theme(text=element_text(size=22)) +
+      theme(axis.title = element_text(size=16)) +
+      geom_point(aes(x=Date, y=Points, fill=StateDope), shape = 21, colour="black", size=5, alpha=0.5, data=tmp) +
+      xlab("") + ylab("Points")
+    if (!"RUS" %in% tmp$StateDope)
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "blue"), guide=F)
+    }
+    else if (!"GDR" %in% tmp$StateDope)
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red"), guide=F)
+    }
+    else
+    {
+      tmp_chart <- tmp_chart +
+        scale_fill_manual(values=c("gray", "red", "blue"), guide=F)
+    }
+    if (!is.na(tmp_wr$Points[1]))
+      {
+        tmp_chart <- tmp_chart +
+          geom_step(aes(x=Date, y=Points), color="grey40", data = tmp_wr)
+        tmp_chart <- tmp_chart +
+          scale_x_date(limits = c(min(tmp$Date),as.Date("2016-07-29"))) +
+          scale_y_continuous(limits = c(min(tmp$Points),max(tmp_wr$Points)),labels=comma)
+    }
+    ggsave(file=paste0("charts/",gender," ",event,".jpg"), plot=tmp_chart, width = 8, height = 4, units = "in", dpi=300)
+    print(paste0(gender," ",event))
+    }
+}
+```
+
+### Chart for contemporary world records
+
+```{r}
+wr <- read_csv("data/world_records.csv")
+
+record_dates <- ggplot(wr, aes(x=Year, fill=Gender, color=Gender)) +
+  scale_color_manual(values=c("mediumblue","violetred")) +
+  scale_fill_manual(values=c("mediumblue","violetred")) +
+  geom_dotplot(stackgroups = T, 
+                 method = "histodot", 
+                 binwidth=1, 
+                 stackdir = "center") +
+  xlab("") +
+  ylab("") +
+  theme_minimal() +
+  facet_wrap(~Sport) +
+  coord_flip() +
+  scale_x_continuous(breaks= c(1985,1990,1995,2000,2005,2010,2015),
+                     labels=c("1985","1990","1995","2000","2005","2010","2015")) +
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        text=element_text(size=22),
+        legend.position = "bottom",
+        legend.title = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank()) 
+
+ggsave("charts/record_dates.svg", plot=record_dates, width = 8, height = 4)
+
+plot(record_dates)
+```
+
